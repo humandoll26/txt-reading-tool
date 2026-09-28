@@ -1,0 +1,897 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="TXTファイルや貼り付けた文章を、ブラウザ標準の音声で読み上げるローカルツールです。">
+  <meta name="color-scheme" content="light dark">
+  <title>よむね — TXT音読ツール</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%235b5ff1'/%3E%3Cpath d='M16 27h10l12-10v30L26 37H16zM44 25c4 4 4 10 0 14M49 19c8 8 8 18 0 26' fill='none' stroke='white' stroke-width='5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f6fb;
+      --surface: #ffffff;
+      --surface-2: #f8f9fd;
+      --ink: #181a2a;
+      --muted: #696d82;
+      --line: #dfe2ee;
+      --accent: #5459e8;
+      --accent-strong: #4045cf;
+      --accent-soft: #ebeaff;
+      --cyan: #33bdd0;
+      --danger: #c2415d;
+      --success: #19795a;
+      --shadow: 0 24px 70px rgba(35, 40, 90, .11);
+      --radius: 20px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { min-width: 320px; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "BIZ UDPGothic", "Yu Gothic UI", "Hiragino Sans", system-ui, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 8% 0%, rgba(84, 89, 232, .13), transparent 26rem),
+        radial-gradient(circle at 96% 12%, rgba(51, 189, 208, .12), transparent 28rem),
+        var(--bg);
+    }
+
+    button, input, select, textarea { font: inherit; }
+
+    button, select, input[type="range"], .drop-zone { touch-action: manipulation; }
+
+    button:focus-visible, select:focus-visible, textarea:focus-visible,
+    input:focus-visible, .drop-zone:focus-visible {
+      outline: 3px solid rgba(84, 89, 232, .32);
+      outline-offset: 2px;
+    }
+
+    .app {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 32px 0 24px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+
+    .brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+
+    .brand-mark {
+      width: 48px;
+      height: 48px;
+      flex: 0 0 auto;
+      display: grid;
+      place-items: center;
+      border-radius: 15px;
+      color: #fff;
+      background: linear-gradient(145deg, var(--accent), #7477f5);
+      box-shadow: 0 10px 26px rgba(84, 89, 232, .25);
+    }
+
+    .brand-mark svg { width: 26px; height: 26px; }
+
+    h1 { margin: 0; font-size: clamp(1.35rem, 2vw, 1.7rem); letter-spacing: .02em; }
+
+    .tagline { margin: 4px 0 0; color: var(--muted); font-size: .93rem; }
+
+    .privacy-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      flex: 0 0 auto;
+      padding: 9px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      background: rgba(255, 255, 255, .68);
+      font-size: .82rem;
+      font-weight: 700;
+    }
+
+    .privacy-chip svg { width: 16px; height: 16px; color: var(--success); }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(0, 1.65fr) minmax(300px, .8fr);
+      gap: 20px;
+      align-items: stretch;
+    }
+
+    .panel {
+      border: 1px solid rgba(210, 214, 229, .9);
+      border-radius: var(--radius);
+      background: rgba(255, 255, 255, .92);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .editor-panel { display: flex; min-height: 650px; flex-direction: column; }
+
+    .drop-zone {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin: 20px 20px 0;
+      padding: 15px 18px;
+      border: 1.5px dashed #b9bde0;
+      border-radius: 15px;
+      background: var(--accent-soft);
+      transition: border-color .18s ease, background .18s ease, transform .18s ease;
+      cursor: pointer;
+    }
+
+    .drop-zone:hover, .drop-zone.is-dragging {
+      border-color: var(--accent);
+      background: #e4e4ff;
+    }
+
+    .drop-zone.is-dragging { transform: scale(.995); }
+
+    .upload-icon {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border-radius: 12px;
+      color: var(--accent);
+      background: var(--surface);
+      box-shadow: 0 5px 16px rgba(63, 68, 156, .1);
+    }
+
+    .upload-icon svg { width: 22px; height: 22px; }
+
+    .drop-copy { min-width: 0; flex: 1; }
+    .drop-title { display: block; font-weight: 800; line-height: 1.35; }
+    .drop-help { display: block; margin-top: 3px; color: var(--muted); font-size: .82rem; }
+
+    .file-button {
+      flex: 0 0 auto;
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 13px;
+      color: #fff;
+      background: var(--accent);
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    #fileInput { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+    .file-meta {
+      display: flex;
+      align-items: center;
+      min-height: 40px;
+      gap: 9px;
+      padding: 12px 22px 6px;
+      color: var(--muted);
+      font-size: .86rem;
+    }
+
+    .file-meta svg { width: 16px; height: 16px; flex: 0 0 auto; }
+    #fileName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .editor-wrap { display: flex; min-height: 0; flex: 1; flex-direction: column; padding: 8px 20px 20px; }
+
+    .editor-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin: 0 2px 9px; }
+    .editor-heading label { font-weight: 800; }
+    .char-count { color: var(--muted); font-size: .8rem; font-variant-numeric: tabular-nums; }
+
+    textarea {
+      width: 100%;
+      min-height: 390px;
+      flex: 1;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 18px;
+      color: var(--ink);
+      background: var(--surface-2);
+      font-size: 1rem;
+      line-height: 1.9;
+      letter-spacing: .015em;
+      transition: border-color .18s ease, box-shadow .18s ease;
+    }
+
+    textarea:hover { border-color: #c6c9da; }
+    textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 4px rgba(84, 89, 232, .08); }
+    textarea::placeholder { color: #9599aa; }
+
+    .control-panel { display: flex; flex-direction: column; }
+
+    .status-card {
+      position: relative;
+      padding: 24px 22px 22px;
+      color: #fff;
+      background:
+        radial-gradient(circle at 95% 0%, rgba(78, 214, 226, .26), transparent 12rem),
+        linear-gradient(145deg, #242755, #343978);
+    }
+
+    .status-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .eyebrow { color: #c7c9f4; font-size: .75rem; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      border: 1px solid rgba(255,255,255,.16);
+      border-radius: 999px;
+      padding: 6px 10px;
+      background: rgba(255,255,255,.08);
+      font-size: .78rem;
+      font-weight: 800;
+    }
+
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #aeb2cc; }
+    .status-badge[data-state="playing"] .status-dot { background: #56e0d0; box-shadow: 0 0 0 5px rgba(86,224,208,.12); }
+    .status-badge[data-state="paused"] .status-dot { background: #ffd476; }
+    .status-badge[data-state="complete"] .status-dot { background: #72e6a4; }
+    .status-badge[data-state="error"] .status-dot { background: #ff91a8; }
+
+    .now-reading { min-height: 78px; margin: 22px 0 18px; }
+    .now-reading p { display: -webkit-box; overflow: hidden; margin: 0; color: #f5f6ff; font-size: 1rem; line-height: 1.65; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+    .now-reading .empty { color: #aeb1d8; }
+
+    .progress-meta { display: flex; justify-content: space-between; gap: 12px; color: #c7c9f4; font-size: .78rem; }
+    .progress-track { height: 5px; margin-top: 9px; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,.12); }
+    .progress-bar { width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #61e0d3, #8e91ff); transition: width .2s ease; }
+
+    .controls { display: grid; grid-template-columns: 1.35fr 1fr 1fr; gap: 9px; padding: 18px 18px 10px; }
+
+    .control-button {
+      min-height: 48px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 12px;
+      color: var(--ink);
+      background: var(--surface);
+      font-weight: 800;
+      cursor: pointer;
+      transition: transform .16s ease, border-color .16s ease, background .16s ease;
+    }
+
+    .control-button:hover:not(:disabled) { transform: translateY(-1px); border-color: #babed2; background: var(--surface-2); }
+    .control-button:active:not(:disabled) { transform: translateY(0); }
+    .control-button:disabled { cursor: not-allowed; opacity: .42; }
+    .control-button svg { width: 18px; height: 18px; }
+    .control-button.primary { border-color: var(--accent); color: #fff; background: var(--accent); }
+    .control-button.primary:hover:not(:disabled) { border-color: var(--accent-strong); background: var(--accent-strong); }
+    .control-button.stop { grid-column: 1 / -1; color: var(--danger); }
+
+    .settings { padding: 14px 20px 22px; }
+    .settings h2 { margin: 0 0 15px; font-size: .82rem; letter-spacing: .12em; text-transform: uppercase; }
+
+    .field { margin-top: 17px; }
+    .field:first-of-type { margin-top: 0; }
+    .field-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+    .field label { color: var(--muted); font-size: .86rem; font-weight: 800; }
+    .value-pill { min-width: 48px; border-radius: 7px; padding: 3px 7px; color: var(--accent); background: var(--accent-soft); text-align: center; font-size: .78rem; font-weight: 900; font-variant-numeric: tabular-nums; }
+
+    select {
+      width: 100%;
+      min-height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0 34px 0 12px;
+      color: var(--ink);
+      background: var(--surface);
+    }
+
+    input[type="range"] {
+      width: 100%;
+      height: 24px;
+      margin: 0;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .message {
+      min-height: 24px;
+      margin: 4px 20px 0;
+      color: var(--danger);
+      font-size: .82rem;
+      line-height: 1.45;
+    }
+
+    footer {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      max-width: 850px;
+      margin: 18px auto 0;
+      color: var(--muted);
+      font-size: .76rem;
+      line-height: 1.6;
+      text-align: left;
+    }
+
+    footer svg { width: 15px; height: 15px; flex: 0 0 auto; margin-top: 2px; }
+
+    @media (max-width: 860px) {
+      .workspace { grid-template-columns: 1fr; }
+      .editor-panel { min-height: 570px; }
+      .control-panel { overflow: visible; }
+      .privacy-chip { display: none; }
+    }
+
+    @media (max-width: 560px) {
+      .app { width: min(100% - 20px, 1180px); padding-top: 18px; }
+      .topbar { margin-bottom: 16px; }
+      .brand-mark { width: 42px; height: 42px; border-radius: 13px; }
+      .tagline { font-size: .82rem; }
+      .drop-zone { align-items: flex-start; margin: 12px 12px 0; padding: 13px; }
+      .upload-icon { display: none; }
+      .file-button { padding: 9px 10px; font-size: .84rem; }
+      .drop-help { display: none; }
+      .file-meta { padding: 10px 14px 4px; }
+      .editor-wrap { padding: 7px 12px 12px; }
+      textarea { min-height: 330px; padding: 14px; line-height: 1.75; }
+      .editor-panel { min-height: 520px; }
+      .controls { grid-template-columns: 1fr 1fr; }
+      .control-button.primary { grid-column: 1 / -1; }
+      .control-button.stop { grid-column: auto; }
+      .settings { padding-inline: 18px; }
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color-scheme: dark;
+        --bg: #10111b;
+        --surface: #1a1c2a;
+        --surface-2: #141622;
+        --ink: #f0f1f8;
+        --muted: #a2a6b9;
+        --line: #343748;
+        --accent: #7a7ff6;
+        --accent-strong: #8c90ff;
+        --accent-soft: #292b54;
+        --danger: #ff8da5;
+        --success: #65d8ad;
+        --shadow: 0 26px 72px rgba(0, 0, 0, .3);
+      }
+      body {
+        background:
+          radial-gradient(circle at 8% 0%, rgba(90, 95, 230, .16), transparent 26rem),
+          radial-gradient(circle at 96% 12%, rgba(40, 180, 200, .12), transparent 28rem),
+          var(--bg);
+      }
+      .panel { border-color: rgba(61, 64, 83, .9); background: rgba(26, 28, 42, .94); }
+      .privacy-chip { background: rgba(26, 28, 42, .75); }
+      .drop-zone { border-color: #4c5081; background: #242749; }
+      .drop-zone:hover, .drop-zone.is-dragging { background: #2c2f58; }
+      .status-card { background: radial-gradient(circle at 95% 0%, rgba(78,214,226,.2), transparent 12rem), linear-gradient(145deg, #22254f, #303570); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9v6h4l5 4V5L7 9H3z"/><path d="M16 8.5a5 5 0 0 1 0 7"/><path d="M19 5.5a9 9 0 0 1 0 13"/></svg>
+        </div>
+        <div>
+          <h1>よむね</h1>
+          <p class="tagline">TXTを読み込んで、ブラウザでそのまま音読します</p>
+        </div>
+      </div>
+      <div class="privacy-chip">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+        ブラウザ内で処理
+      </div>
+    </header>
+
+    <div class="workspace">
+      <section class="panel editor-panel" aria-labelledby="textLabel">
+        <div class="drop-zone" id="dropZone" role="button" tabindex="0" aria-controls="fileInput" aria-label="TXTファイルを選択、またはここにドロップ">
+          <span class="upload-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="m9 15 3-3 3 3"/></svg>
+          </span>
+          <span class="drop-copy">
+            <span class="drop-title">TXTファイルをここへ</span>
+            <span class="drop-help">ドラッグ＆ドロップ、またはファイルを選択</span>
+          </span>
+          <span class="file-button" aria-hidden="true">ファイルを選択</span>
+          <input id="fileInput" type="file" accept=".txt,text/plain">
+        </div>
+
+        <div class="file-meta">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+          <span id="fileName">ファイル未選択 — 下の欄へ直接入力もできます</span>
+        </div>
+
+        <p class="message" id="message" role="alert" aria-live="assertive"></p>
+
+        <div class="editor-wrap">
+          <div class="editor-heading">
+            <label id="textLabel" for="textInput">読み上げる本文</label>
+            <span class="char-count" id="charCount">0文字</span>
+          </div>
+          <textarea id="textInput" spellcheck="false" placeholder="ここに文章を貼り付けるか、TXTファイルを読み込んでください。"></textarea>
+        </div>
+      </section>
+
+      <aside class="panel control-panel" aria-label="読み上げコントロール">
+        <div class="status-card">
+          <div class="status-row">
+            <span class="eyebrow">Reading status</span>
+            <span class="status-badge" id="statusBadge" data-state="idle">
+              <span class="status-dot" aria-hidden="true"></span>
+              <span id="statusText" aria-live="polite">未再生</span>
+            </span>
+          </div>
+
+          <div class="now-reading" aria-label="現在読み上げている部分">
+            <p id="currentChunk" class="empty">再生すると、ここに読み上げ中の文章が表示されます。</p>
+          </div>
+
+          <div class="progress-meta">
+            <span>現在位置</span>
+            <span id="progressText">0 / 0</span>
+          </div>
+          <div class="progress-track" aria-hidden="true">
+            <div class="progress-bar" id="progressBar"></div>
+          </div>
+        </div>
+
+        <div class="controls">
+          <button class="control-button primary" id="playButton" type="button">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+            最初から再生
+          </button>
+          <button class="control-button" id="pauseButton" type="button" disabled>
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
+            一時停止
+          </button>
+          <button class="control-button" id="resumeButton" type="button" disabled>
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+            再開
+          </button>
+          <button class="control-button stop" id="stopButton" type="button" disabled>
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 6h12v12H6z"/></svg>
+            停止
+          </button>
+        </div>
+
+        <div class="settings">
+          <h2>読み上げ設定</h2>
+          <div class="field">
+            <div class="field-head"><label for="voiceSelect">音声</label></div>
+            <select id="voiceSelect"><option value="">音声を読み込み中…</option></select>
+          </div>
+          <div class="field">
+            <div class="field-head">
+              <label for="rateInput">速度</label>
+              <output class="value-pill" id="rateValue" for="rateInput">1.0×</output>
+            </div>
+            <input id="rateInput" type="range" min="0.5" max="2" step="0.1" value="1">
+          </div>
+          <div class="field">
+            <div class="field-head">
+              <label for="pitchInput">音程</label>
+              <output class="value-pill" id="pitchValue" for="pitchInput">1.0</output>
+            </div>
+            <input id="pitchInput" type="range" min="0.5" max="2" step="0.1" value="1">
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <footer>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      <span>読み込んだテキストはこのツールから外部サーバーへ送信されません。音声合成の処理方法は、利用中のOS・ブラウザの実装に依存します。</span>
+    </footer>
+  </main>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const synth = window.speechSynthesis;
+      const supportsSpeech = "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+
+      const elements = {
+        fileInput: document.getElementById("fileInput"),
+        dropZone: document.getElementById("dropZone"),
+        fileName: document.getElementById("fileName"),
+        textInput: document.getElementById("textInput"),
+        charCount: document.getElementById("charCount"),
+        message: document.getElementById("message"),
+        play: document.getElementById("playButton"),
+        pause: document.getElementById("pauseButton"),
+        resume: document.getElementById("resumeButton"),
+        stop: document.getElementById("stopButton"),
+        voice: document.getElementById("voiceSelect"),
+        rate: document.getElementById("rateInput"),
+        pitch: document.getElementById("pitchInput"),
+        rateValue: document.getElementById("rateValue"),
+        pitchValue: document.getElementById("pitchValue"),
+        statusBadge: document.getElementById("statusBadge"),
+        statusText: document.getElementById("statusText"),
+        currentChunk: document.getElementById("currentChunk"),
+        progressText: document.getElementById("progressText"),
+        progressBar: document.getElementById("progressBar")
+      };
+
+      const state = {
+        chunks: [],
+        index: 0,
+        runId: 0,
+        mode: "idle",
+        voices: [],
+        utterance: null
+      };
+
+      const STATUS_LABELS = {
+        idle: "未再生",
+        playing: "読み上げ中",
+        paused: "一時停止中",
+        stopped: "停止",
+        complete: "読み上げ完了",
+        error: "エラー"
+      };
+
+      function setStatus(mode) {
+        state.mode = mode;
+        elements.statusBadge.dataset.state = mode;
+        elements.statusText.textContent = STATUS_LABELS[mode] || mode;
+
+        const active = mode === "playing" || mode === "paused";
+        elements.play.disabled = active || !supportsSpeech;
+        elements.pause.disabled = mode !== "playing";
+        elements.resume.disabled = mode !== "paused";
+        elements.stop.disabled = !active;
+      }
+
+      function showMessage(text) {
+        elements.message.textContent = text || "";
+      }
+
+      function updateCharacterCount() {
+        const count = Array.from(elements.textInput.value).length;
+        elements.charCount.textContent = count.toLocaleString("ja-JP") + "文字";
+      }
+
+      function updateProgress() {
+        const total = state.chunks.length;
+        const current = total ? Math.min(state.index + 1, total) : 0;
+        elements.progressText.textContent = current + " / " + total;
+        elements.progressBar.style.width = total ? ((current / total) * 100) + "%" : "0%";
+      }
+
+      function resetProgress() {
+        state.chunks = [];
+        state.index = 0;
+        elements.currentChunk.textContent = "再生すると、ここに読み上げ中の文章が表示されます。";
+        elements.currentChunk.classList.add("empty");
+        updateProgress();
+      }
+
+      // 段落と文の切れ目を優先し、音声合成が長文で停止しにくい長さへまとめる。
+      function createChunks(text, targetLength = 360, hardLimit = 480) {
+        const normalized = text.replace(/\r\n?/g, "\n").trim();
+        if (!normalized) return [];
+
+        const paragraphs = normalized.split(/\n\s*\n+/).filter(Boolean);
+        const units = [];
+
+        paragraphs.forEach((paragraph) => {
+          const lines = paragraph.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+          lines.forEach((line) => {
+            const sentences = line.match(/[^。！？!?…]+[。！？!?…]+|[^。！？!?…]+$/g) || [line];
+            sentences.forEach((sentence) => units.push(sentence.trim()));
+          });
+        });
+
+        const pieces = [];
+        units.forEach((unit) => {
+          let remaining = unit;
+          while (remaining.length > hardLimit) {
+            let cut = hardLimit;
+            const candidate = remaining.slice(0, hardLimit + 1);
+            const preferred = Math.max(candidate.lastIndexOf("、"), candidate.lastIndexOf("，"), candidate.lastIndexOf(","), candidate.lastIndexOf(" "));
+            if (preferred >= Math.floor(hardLimit * 0.55)) cut = preferred + 1;
+            pieces.push(remaining.slice(0, cut).trim());
+            remaining = remaining.slice(cut).trim();
+          }
+          if (remaining) pieces.push(remaining);
+        });
+
+        const chunks = [];
+        let buffer = "";
+        pieces.forEach((piece) => {
+          const joined = buffer ? buffer + piece : piece;
+          if (buffer && joined.length > targetLength) {
+            chunks.push(buffer);
+            buffer = piece;
+          } else {
+            buffer = joined;
+          }
+        });
+        if (buffer) chunks.push(buffer);
+        return chunks;
+      }
+
+      function selectedVoice() {
+        return state.voices.find((voice) => voice.voiceURI === elements.voice.value) || null;
+      }
+
+      function populateVoices() {
+        if (!supportsSpeech) return;
+
+        let savedVoice = "";
+        try {
+          savedVoice = localStorage.getItem("yomune.voice") || "";
+        } catch (error) {
+          // file:// や厳格なプライバシー設定で保存領域が使えない場合も音声一覧は表示する。
+        }
+        const previous = elements.voice.value || savedVoice;
+        state.voices = synth.getVoices().slice().sort((a, b) => {
+          const aJa = a.lang.toLowerCase().startsWith("ja") ? 0 : 1;
+          const bJa = b.lang.toLowerCase().startsWith("ja") ? 0 : 1;
+          return aJa - bJa || a.lang.localeCompare(b.lang) || a.name.localeCompare(b.name);
+        });
+
+        elements.voice.replaceChildren();
+        const automatic = document.createElement("option");
+        automatic.value = "";
+        automatic.textContent = "自動選択（日本語）";
+        elements.voice.appendChild(automatic);
+
+        state.voices.forEach((voice) => {
+          const option = document.createElement("option");
+          option.value = voice.voiceURI;
+          option.textContent = voice.name + " — " + voice.lang + (voice.default ? "（既定）" : "");
+          elements.voice.appendChild(option);
+        });
+
+        if (state.voices.some((voice) => voice.voiceURI === previous)) {
+          elements.voice.value = previous;
+        } else {
+          const japaneseVoice = state.voices.find((voice) => voice.lang.toLowerCase().startsWith("ja"));
+          elements.voice.value = japaneseVoice ? japaneseVoice.voiceURI : "";
+        }
+      }
+
+      function stopReading(options = {}) {
+        state.runId += 1;
+        state.utterance = null;
+        if (supportsSpeech) synth.cancel();
+
+        if (options.reset !== false) resetProgress();
+        if (options.status !== false) setStatus("stopped");
+      }
+
+      function speakCurrentChunk(runId) {
+        if (runId !== state.runId || state.mode === "stopped") return;
+
+        if (state.index >= state.chunks.length) {
+          state.utterance = null;
+          setStatus("complete");
+          elements.currentChunk.textContent = "最後まで読み上げました。";
+          elements.currentChunk.classList.remove("empty");
+          elements.progressText.textContent = state.chunks.length + " / " + state.chunks.length;
+          elements.progressBar.style.width = "100%";
+          return;
+        }
+
+        const chunk = state.chunks[state.index];
+        const utterance = new SpeechSynthesisUtterance(chunk);
+        const voice = selectedVoice();
+        utterance.lang = voice ? voice.lang : "ja-JP";
+        if (voice) utterance.voice = voice;
+        utterance.rate = Number(elements.rate.value);
+        utterance.pitch = Number(elements.pitch.value);
+
+        state.utterance = utterance;
+        elements.currentChunk.textContent = chunk;
+        elements.currentChunk.classList.remove("empty");
+        updateProgress();
+
+        utterance.onend = () => {
+          if (runId !== state.runId || state.mode === "stopped") return;
+          state.index += 1;
+          speakCurrentChunk(runId);
+        };
+
+        utterance.onerror = (event) => {
+          if (runId !== state.runId || event.error === "canceled" || event.error === "interrupted") return;
+          state.utterance = null;
+          setStatus("error");
+          showMessage("読み上げ中にエラーが発生しました。別の音声を選ぶか、もう一度お試しください。");
+        };
+
+        synth.speak(utterance);
+      }
+
+      function startReading() {
+        showMessage("");
+        if (!supportsSpeech) {
+          setStatus("error");
+          showMessage("このブラウザは音声読み上げに対応していません。Chrome、Edge、Safariの現行版でお試しください。");
+          return;
+        }
+
+        const text = elements.textInput.value.trim();
+        if (!text) {
+          showMessage("読み上げる文章を入力するか、TXTファイルを読み込んでください。");
+          elements.textInput.focus();
+          return;
+        }
+
+        // ブラウザ側に残ったキューも先に破棄し、再生連打による重複を防ぐ。
+        stopReading({ status: false });
+        state.chunks = createChunks(text);
+        state.index = 0;
+        state.runId += 1;
+        const runId = state.runId;
+        setStatus("playing");
+        speakCurrentChunk(runId);
+      }
+
+      function pauseReading() {
+        if (!supportsSpeech || state.mode !== "playing") return;
+        synth.pause();
+        setStatus("paused");
+      }
+
+      function resumeReading() {
+        if (!supportsSpeech || state.mode !== "paused") return;
+        synth.resume();
+        setStatus("playing");
+      }
+
+      async function loadTextFile(file) {
+        showMessage("");
+        if (!file || !file.name.toLowerCase().endsWith(".txt")) {
+          showMessage(".txt形式のファイルを選択してください。");
+          return;
+        }
+
+        stopReading({ status: false });
+        try {
+          const text = typeof file.text === "function"
+            ? await file.text()
+            : await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result || ""));
+                reader.onerror = () => reject(reader.error);
+                reader.readAsText(file, "UTF-8");
+              });
+
+          elements.textInput.value = text;
+          elements.fileName.textContent = file.name;
+          updateCharacterCount();
+          resetProgress();
+          setStatus("idle");
+          elements.fileInput.value = "";
+          if (!text.trim()) showMessage("ファイルは空です。本文を入力してから再生してください。");
+        } catch (error) {
+          setStatus("error");
+          showMessage("ファイルを読み込めませんでした。UTF-8形式のTXTファイルか確認してください。");
+        }
+      }
+
+      function loadSettings() {
+        try {
+          const savedRate = Number(localStorage.getItem("yomune.rate"));
+          const savedPitch = Number(localStorage.getItem("yomune.pitch"));
+          if (savedRate >= 0.5 && savedRate <= 2) elements.rate.value = String(savedRate);
+          if (savedPitch >= 0.5 && savedPitch <= 2) elements.pitch.value = String(savedPitch);
+        } catch (error) {
+          // プライベートモード等で保存が使えなくても、読み上げ機能は継続する。
+        }
+        updateSettingLabels();
+      }
+
+      function saveSettings() {
+        try {
+          localStorage.setItem("yomune.rate", elements.rate.value);
+          localStorage.setItem("yomune.pitch", elements.pitch.value);
+          localStorage.setItem("yomune.voice", elements.voice.value);
+        } catch (error) {
+          // 保存できない環境では、このセッション中の設定だけを利用する。
+        }
+      }
+
+      function updateSettingLabels() {
+        elements.rateValue.textContent = Number(elements.rate.value).toFixed(1) + "×";
+        elements.pitchValue.textContent = Number(elements.pitch.value).toFixed(1);
+      }
+
+      elements.dropZone.addEventListener("click", () => elements.fileInput.click());
+      elements.dropZone.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          elements.fileInput.click();
+        }
+      });
+      elements.fileInput.addEventListener("change", () => loadTextFile(elements.fileInput.files[0]));
+
+      ["dragenter", "dragover"].forEach((name) => {
+        elements.dropZone.addEventListener(name, (event) => {
+          event.preventDefault();
+          elements.dropZone.classList.add("is-dragging");
+        });
+      });
+      ["dragleave", "drop"].forEach((name) => {
+        elements.dropZone.addEventListener(name, (event) => {
+          event.preventDefault();
+          elements.dropZone.classList.remove("is-dragging");
+        });
+      });
+      elements.dropZone.addEventListener("drop", (event) => loadTextFile(event.dataTransfer.files[0]));
+
+      elements.textInput.addEventListener("input", () => {
+        updateCharacterCount();
+        if (state.mode === "playing" || state.mode === "paused") {
+          stopReading();
+          showMessage("本文が変更されたため読み上げを停止しました。再生すると最新の本文を最初から読み上げます。");
+        } else {
+          resetProgress();
+          setStatus("idle");
+          showMessage("");
+        }
+      });
+
+      elements.play.addEventListener("click", startReading);
+      elements.pause.addEventListener("click", pauseReading);
+      elements.resume.addEventListener("click", resumeReading);
+      elements.stop.addEventListener("click", () => {
+        showMessage("");
+        stopReading();
+      });
+
+      [elements.rate, elements.pitch].forEach((input) => {
+        input.addEventListener("input", updateSettingLabels);
+        input.addEventListener("change", saveSettings);
+      });
+      elements.voice.addEventListener("change", saveSettings);
+
+      window.addEventListener("beforeunload", () => {
+        if (supportsSpeech) synth.cancel();
+      });
+
+      loadSettings();
+      updateCharacterCount();
+      setStatus("idle");
+
+      if (supportsSpeech) {
+        populateVoices();
+        if (typeof synth.addEventListener === "function") {
+          synth.addEventListener("voiceschanged", populateVoices);
+        } else {
+          synth.onvoiceschanged = populateVoices;
+        }
+        window.setTimeout(populateVoices, 250);
+      } else {
+        elements.voice.innerHTML = "<option>音声読み上げ非対応</option>";
+        elements.voice.disabled = true;
+        setStatus("error");
+        showMessage("このブラウザは音声読み上げに対応していません。Chrome、Edge、Safariの現行版でお試しください。");
+      }
+    })();
+  </script>
+</body>
+</html>
