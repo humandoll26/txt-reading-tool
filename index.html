@@ -537,10 +537,12 @@
       const state = {
         chunks: [],
         index: 0,
+        chunkOffset: 0,
         runId: 0,
         mode: "idle",
         voices: [],
-        utterance: null
+        utterance: null,
+        settingsTimer: null
       };
 
       const STATUS_LABELS = {
@@ -583,6 +585,7 @@
       function resetProgress() {
         state.chunks = [];
         state.index = 0;
+        state.chunkOffset = 0;
         elements.currentChunk.textContent = "再生すると、ここに読み上げ中の文章が表示されます。";
         elements.currentChunk.classList.add("empty");
         updateProgress();
@@ -675,6 +678,10 @@
       }
 
       function stopReading(options = {}) {
+        if (state.settingsTimer) {
+          window.clearTimeout(state.settingsTimer);
+          state.settingsTimer = null;
+        }
         state.runId += 1;
         state.utterance = null;
         if (supportsSpeech) synth.cancel();
@@ -697,7 +704,14 @@
         }
 
         const chunk = state.chunks[state.index];
-        const utterance = new SpeechSynthesisUtterance(chunk);
+        const startOffset = Math.min(state.chunkOffset, chunk.length);
+        if (startOffset >= chunk.length) {
+          state.index += 1;
+          state.chunkOffset = 0;
+          speakCurrentChunk(runId);
+          return;
+        }
+        const utterance = new SpeechSynthesisUtterance(chunk.slice(startOffset));
         const voice = selectedVoice();
         utterance.lang = voice ? voice.lang : "ja-JP";
         if (voice) utterance.voice = voice;
@@ -709,9 +723,16 @@
         elements.currentChunk.classList.remove("empty");
         updateProgress();
 
+        // 速度・音程の変更時に、現在の単語付近から読み直せるよう位置を記録する。
+        utterance.onboundary = (event) => {
+          if (runId !== state.runId || typeof event.charIndex !== "number") return;
+          state.chunkOffset = Math.min(startOffset + event.charIndex, chunk.length);
+        };
+
         utterance.onend = () => {
           if (runId !== state.runId || state.mode === "stopped") return;
           state.index += 1;
+          state.chunkOffset = 0;
           speakCurrentChunk(runId);
         };
 
@@ -744,6 +765,7 @@
         stopReading({ status: false });
         state.chunks = createChunks(text);
         state.index = 0;
+        state.chunkOffset = 0;
         state.runId += 1;
         const runId = state.runId;
         setStatus("playing");
@@ -758,8 +780,36 @@
 
       function resumeReading() {
         if (!supportsSpeech || state.mode !== "paused") return;
-        synth.resume();
         setStatus("playing");
+        if (state.utterance && synth.paused) {
+          synth.resume();
+          return;
+        }
+        if (synth.paused) synth.resume();
+        state.runId += 1;
+        speakCurrentChunk(state.runId);
+      }
+
+      function applySettingsDuringReading() {
+        updateSettingLabels();
+        if (!supportsSpeech || (state.mode !== "playing" && state.mode !== "paused")) return;
+
+        if (state.settingsTimer) window.clearTimeout(state.settingsTimer);
+        const wasPaused = state.mode === "paused";
+
+        // SpeechSynthesisUtterance の設定は再生開始後に変更できないため、
+        // 現在位置を引き継いだ新しい発話へ差し替える。
+        state.runId += 1;
+        const runId = state.runId;
+        state.utterance = null;
+        synth.cancel();
+
+        if (wasPaused) return;
+        state.settingsTimer = window.setTimeout(() => {
+          state.settingsTimer = null;
+          if (runId !== state.runId || state.mode !== "playing") return;
+          speakCurrentChunk(runId);
+        }, 40);
       }
 
       async function loadTextFile(file) {
@@ -864,7 +914,7 @@
       });
 
       [elements.rate, elements.pitch].forEach((input) => {
-        input.addEventListener("input", updateSettingLabels);
+        input.addEventListener("input", applySettingsDuringReading);
         input.addEventListener("change", saveSettings);
       });
       elements.voice.addEventListener("change", saveSettings);
